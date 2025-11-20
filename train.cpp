@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <cstring>
 #include "openGA.h"
 #include "RobotController.h"
 #include <mujoco/mujoco.h>
@@ -27,9 +26,10 @@ double evaluate(const Chromo& C, mjModel* m)
     mj_resetData(m, d);
     mj_forward(m, d);
 
-    RobotController ctrl(NET_N, MOTOR_COUNT, m->opt.timestep);
-    ctrl.loadParameters(C.p);
-    ctrl.reset();
+    RobotController robotController(NET_N, MOTOR_COUNT, m->opt.timestep);
+    robotController.loadParameters(C.p);
+    robotController.reset();
+//  cout << "create network:" << endl << robotController.net << endl;
 
     double x0 = d->qpos[0];
 
@@ -40,37 +40,43 @@ double evaluate(const Chromo& C, mjModel* m)
         std::vector<double> sensors;
         for(int i=0;i<m->nq;i++) sensors.push_back(d->qpos[i]);
 
-        auto u = ctrl.step(sensors);
+        auto u = robotController.step(sensors);
+//      cout << "step:" << t << endl << "network:" <<ctrl.net << endl;
 
         for(int i=0;i<m->nu;i++) d->ctrl[i] = u[i];
 
         mj_step(m, d);
-
-        if (d->qpos[2] < 0.4) break;  // robot fell
     }
+    
+    std::ofstream fout("network.txt");
+    fout << robotController.net << endl; 
+    fout.close();
 
     double dist = d->qpos[0] - x0;
 
     mj_deleteData(d);
+    cout << "dist: "<< dist << endl;
 
-    return dist < 0 ? 0 : dist;
+    return dist;
+//  return dist < 0 ? 0 : dist;
 }
 
 int main(int argc, const char** argv){
     if(argc!=2){
-        printf("Usage: ./train humanoid.xml\n");
+        cout << "please selecte one module" << endl;
         return 0;
     }
 
     char err[1000];
     mjModel* m = mj_loadXML(argv[1], 0, err, 1000);
     if(!m){
-        printf("Load error: %s\n", err);
+        cout << "Load error: " << err << endl;
         return 0;
     }
+    cout <<"number of generalized coordinates = " << m->nq  << endl;
 
     GA ga;
-    ga.verbose = true;
+//  ga.verbose = true;
 
     ga.population = 60;
     ga.generation_max = 150;
@@ -108,9 +114,9 @@ int main(int argc, const char** argv){
     };
 
     ga.SO_report_generation = [&](int gen, const auto& last, const Chromo& best){
-        std::cout << "Gen " << gen
-                  << "   Best=" << last.best_total_cost
-                  << "   Avg=" << last.average_cost << std::endl;
+        std::cout << "Gen: " << gen << endl
+                  << "Best=" << last.best_total_cost << endl
+                  << "Avg=" << last.average_cost << endl;
     };
 
     ga.solve();
